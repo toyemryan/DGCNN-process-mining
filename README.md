@@ -119,7 +119,7 @@ Durata: una notte di addestramento su RTX 4070 Laptop.
 
 | Addestramento | Stato |
 |---|---|
-| GraphSAGE (codice corretto) | in arrivo |
+| GraphSAGE (codice modificato) | in arrivo |
 | Altre architetture GNN (GCN, GAT, GIN…) | in arrivo |
 
 ---
