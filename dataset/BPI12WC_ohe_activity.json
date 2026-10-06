@@ -1,0 +1,82 @@
+{
+ "artificial_start": [
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "W_Completerenaanvraag": [
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "W_Nabellenoffertes": [
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  0
+ ],
+ "artificial_end": [
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0
+ ],
+ "W_Afhandelenleads": [
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0
+ ],
+ "W_Validerenaanvraag": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0
+ ],
+ "W_Nabellenincompletedossiers": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0
+ ],
+ "W_Beoordelenfraude": [
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  1
+ ]
+}

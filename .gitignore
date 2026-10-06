@@ -1,0 +1,26 @@
+# Notes personnelles
+README_DETAILLE.md
+
+# Environnement Python
+.venv/
+__pycache__/
+*.pyc
+
+# Editeurs / systeme
+.vscode/
+.idea/
+.DS_Store
+__MACOSX/
+
+# Donnees generees
+dataset/*_processed.g
+dataset/*_tensors/
+
+# Resultats d'entrainement
+models/
+models_*/
+various/
+
+# Journaux
+log.txt
+*.log
