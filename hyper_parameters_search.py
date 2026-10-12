@@ -9,7 +9,9 @@ from os.path import join, exists
 from pickle import dump, load
 from os import makedirs, listdir
 from data_encoding import main as data_encoding
-from gnn import SAGE_GNN as GNN
+#from gnn import SAGE_GNN as GNN
+#from gnn_v2 import SAGE_GNN as GNN
+from gnn_GATv2Conv_v2 import GATv2_GNN as GNN
 from config import EPOCHS, N_TRIALS, LOG_NAME, EARLY_STOPPING
 from sklearn.metrics import classification_report
 
@@ -142,8 +144,7 @@ def objective(trial, train_dataset, val_dataset, test_dataset, device, log_name,
         p_str += f'_{n_k}_{value}'
 
     ck_path = join('various', 'optuna', f'{log_name}_ckp_{p_str}.pt')
-
-    train_loader = DataLoader(dataset=train_dataset, batch_size=parameters.get('batch_size'))
+    train_loader = DataLoader(dataset=train_dataset, batch_size=parameters.get('batch_size'), shuffle=True)
     val_loader = DataLoader(dataset=val_dataset, batch_size=parameters.get('batch_size'))
     test_loader = DataLoader(dataset=test_dataset, batch_size=parameters.get('batch_size'))
 
