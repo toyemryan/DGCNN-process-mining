@@ -333,7 +333,29 @@ Modello migliore di ogni dataset (scelto sulla loss di validazione), valutato su
 
 ### Limite dei dati
 
-Una semplice tabella di frequenze, senza rete neurale (si predice l'attività che segue più spesso la stessa sequenza nel training set), raggiunge già l'**83,4 %** su Receipt, contro l'86,7 % del miglior GNN: i modelli sono vicini al **limite imposto dai dati**, ed è per questo che nessuna architettura si distingue.
+**Un paradosso: stesso passato, futuro diverso.** Due prefissi di Helpdesk con la stessa sequenza di attività portano, nella realtà, ad attività diverse:
+
+| Prefisso | Sequenza | Attività reale | GGNN v3: s6 / s9 |
+|---|---|---|---|
+| `s1937_3` (validation) | `artificial_start → s1 → s8` | **s6** | 75,9 % / 20,6 % |
+| `s3789_3` (test) | `artificial_start → s1 → s8` | **s9** | 76,7 % / 19,0 % |
+
+Il modello dà quasi le stesse probabilità ai due prefissi (anche GraphSAGE v2: 72,7 % / 23,0 %) e predice `s6` in entrambi i casi: giusto per il primo, sbagliato per il secondo. Nei dati, delle **3 055 tracce** che iniziano con `s1 → s8`, il **76,8 %** prosegue con `s6` e il **20,1 %** con `s9`. Due architetture diverse ritrovano esattamente queste frequenze: sono **ben calibrate**, ma nessuna può superare il 76,8 % su questo prefisso, perché nulla nei dati distingue i due casi.
+
+**Cosa descrive un evento.** Nel file `.g`, ogni attività (riga `v`) contiene:
+
+| Informazione | Usata dal modello |
+|---|---|
+| Nome dell'attività (codifica one-hot) | ✅ |
+| `norm_time`: posizione nel calendario del log | ✅ |
+| `trace_time`: tempo dall'inizio della traccia | ✅ |
+| `prev_event_time`: tempo dall'attività precedente | ✅ |
+| `start_time`, `end_time` (orari reali) | ❌ |
+| `org_resource` (chi ha svolto l'attività) | ❌ (presente in 4 dataset su 5, assente in Helpdesk) |
+
+Per Helpdesk queste informazioni sono poco utili: solo **9 attività**, generiche e anonimizzate (`s1` … `s9`), nessuna risorsa, e tempi poco informativi. Per il prefisso `s1 → s8`, `norm_time` vale 0,53 ± 0,27 per le tracce che vanno verso `s6` e 0,55 ± 0,27 per quelle che vanno verso `s9` (indistinguibili), mentre `trace_time` e `prev_event_time` valgono 0, perché sono calcolati dall'**inizio** dell'attività: la durata dell'ultima attività non è mai visibile.
+
+**Perché Helpdesk è il dataset più difficile.** Una semplice tabella di frequenze basata sulla sequenza di attività raggiunge il **78,7 %**, e i modelli il **79,2 %**: hanno già raggiunto il limite. Le caratteristiche temporali non aggiungono quasi nulla, perché `norm_time` misura la data e non l'avanzamento del ticket, e le durate utili valgono spesso zero. La debolezza di Helpdesk viene quindi dalla **povertà dell'informazione disponibile** (9 attività generiche, nessuna risorsa, tempi poco informativi), e non dai modelli.
 
 ### Iperparametri scelti da Optuna
 

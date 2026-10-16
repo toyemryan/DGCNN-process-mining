@@ -11,11 +11,12 @@ import json
 import torch
 import pandas as pd
 from gnn_v2 import SAGE_GNN     # per GATv2: from gnn_GATv2Conv_v2 import GATv2_GNN as SAGE_GNN
+#from gnn_GatedGraph_v3 import GGNN_GNN as SAGE_GNN
 
 
 # ----- Parametri da modificare -----
-DATASET = 'BPI12WC'
-PREFISSO = 's173730_4'       # <traccia>_<lunghezza del prefisso> (vedi i file in dataset/<DATASET>_tensors)
+DATASET = 'Helpdesk_no_resources'
+PREFISSO = 's3789_3'       # <traccia>_<lunghezza del prefisso> (vedi i file in dataset/<DATASET>_tensors)
 MODELLI = 'models_sage_v2'      # cartella dei risultati dell'addestramento
 
 # ----- 1. Il prefisso da provare -----
