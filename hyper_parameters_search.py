@@ -11,7 +11,9 @@ from os import makedirs, listdir
 from data_encoding import main as data_encoding
 #from gnn import SAGE_GNN as GNN
 #from gnn_v2 import SAGE_GNN as GNN
-from gnn_GATv2Conv_v2 import GATv2_GNN as GNN
+#from gnn_GATv2Conv_v2 import GATv2_GNN as GNN
+#from gnn_GATv2Conv_v3 import GATv2_GNN as GNN
+from gnn_GatedGraph_v3 import GGNN_GNN as GNN
 from config import EPOCHS, N_TRIALS, LOG_NAME, EARLY_STOPPING
 from sklearn.metrics import classification_report
 
@@ -44,7 +46,7 @@ def set_seed(seed):
 
 
 def get_hyperparameters(trial):
-    return {
+    parameters = {
         'learning_rate': trial.suggest_loguniform('learning_rate', 1e-5, 1e-2),
         'batch_size': trial.suggest_int('batch_size', 128, 256, step=64),
         'hidden_layers': trial.suggest_int('hidden_layers', 0, 4),
@@ -53,6 +55,16 @@ def get_hyperparameters(trial):
         'readout': trial.suggest_categorical('readout', ['add', 'mean', 'max']),
         'aggregator': trial.suggest_categorical('aggregator', ['mean']),
     }
+    # iperparametri specifici di GATv2: solo quando si addestra GATv2
+    if GNN.__name__ == 'GATv2_GNN':
+        parameters['num_heads'] = trial.suggest_categorical('num_heads', [1, 2, 4])
+        parameters['concat'] = trial.suggest_categorical('concat', [True, False])
+
+    # iperparametri specifici di GGNN: solo quando si addestra GGNN
+    if GNN.__name__ == 'GGNN_GNN':
+        parameters['ggnn_aggr'] = trial.suggest_categorical('ggnn_aggr', ['add', 'mean', 'max'])
+        parameters['ggnn_input'] = trial.suggest_categorical('ggnn_input', ['pad', 'linear'])
+    return parameters
 
 
 def train_and_val_network(model, device, optimizer, criterion, train_loader, val_loader):

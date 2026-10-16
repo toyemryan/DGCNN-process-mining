@@ -85,8 +85,6 @@ train_loader = DataLoader(dataset=train_dataset, batch_size=parameters.get('batc
 
 Gli iperparametri esplorati da Optuna e il protocollo di addestramento restano identici a quelli della versione 1.
 
-**Risultato**: loss di validazione migliore su tutti e 5 i dataset, F1 macro fino a **+9,5 punti** e addestramento fino a **7 volte più veloce** (dettagli nella sezione 6).
-
 ---
 
 ## 3. Esecuzione
@@ -119,7 +117,11 @@ Event log  →  Instance Graphs  →  Prefix-IGs  →  GNN  →  Prossima attivi
 | `gnn.py` | Architettura GraphSAGE (versione originale) |
 | `gnn_v2.py` | Architettura GraphSAGE modificata (versione 2) |
 | `gnn_GATv2Conv_v2.py` | Architettura GATv2 con le modifiche della versione 2 |
+| `gnn_GATv2Conv_v3.py` | GATv2 v3: teste di attenzione scelte da Optuna |
+| `gnn_GatedGraph_v3.py` | GGNN v3: GRU, aggregazione e ingresso scelti da Optuna |
 | `hyper_parameters_search.py` | Ricerca degli iperparametri, addestramento e test |
+| `prova_predizione.py` | Prova del modello addestrato su un prefisso (sezione 6) |
+| `migliori_iperparametri.py` | Metriche e iperparametri scelti da Optuna per ogni modello (sezione 7) |
 
 ---
 
@@ -155,88 +157,208 @@ Stesso layer `SAGEConv`, con le modifiche della sezione 2: la scheda dell'**ulti
 
 ### GATv2 — versione 2 (`gnn_GATv2Conv_v2.py`)
 
-Invece di fare una media semplice, ogni attività **impara quanto pesare ciascun predecessore** (meccanismo di *attenzione*): i pesi sono calcolati dal modello e sommano a 1. Usa 4 teste di attenzione indipendenti, mediate tra loro. Stesso scheletro della versione 2 di GraphSAGE.
+Invece di fare una media semplice, ogni attività **impara quanto pesare ciascun predecessore** (meccanismo di *attenzione*): i pesi sono calcolati dal modello e sommano a 1. Versione 2: 4 teste di attenzione fisse, mediate tra loro. Rispetto al file originale è stato corretto un errore: `aggr='mean'` divideva una seconda volta i pesi di attenzione, che quindi non sommavano più a 1.
+
+### GATv2 — versione 3 (`gnn_GATv2Conv_v3.py`): le teste scelte da Optuna
+
+Ogni **testa** di attenzione calcola il proprio modo di pesare i predecessori. Le teste si possono combinare in due modi:
+
+| `concat` | Combinazione | Dimensione di ogni testa | Parametri* |
+|---|---|---|---:|
+| `False` | **media** delle teste | `layers_size` | ≈ 276 000 × numero di teste |
+| `True` | teste **messe in fila** | `layers_size ÷ num_heads` | ≈ 276 000, qualunque sia il numero di teste |
+
+**Perché farle variare:** la versione 2 (4 teste mediate, ≈ 928 000 parametri, 3,4 volte GraphSAGE v2) era peggiore sui dataset piccoli (Receipt, Helpdesk). Ipotesi: modello troppo pesante. Si è quindi lasciato a Optuna la scelta di `num_heads` ∈ {1, 2, 4} e `concat` ∈ {True, False}. Il valore 3 è escluso perché con `concat=True` non divide le dimensioni esplorate (es. 160 ÷ 3 non è intero).
+
+### GGNN — versione 3 (`gnn_GatedGraph_v3.py`)
+
+Ad ogni passo di propagazione, ogni attività riceve i messaggi dei suoi predecessori e aggiorna la propria scheda con una **GRU**, che decide da sola quanto conservare della scheda precedente e quanto prendere della nuova informazione. È il layer usato da SR-GNN (Wu et al., AAAI 2019) per predire il prossimo elemento di una sessione, un problema molto simile al nostro.
+
+Un solo layer `GatedGraphConv` con `hidden_layers + 2` passi (stesso numero degli altri modelli). La GRU sostituisce la connessione residua. Due scelte lasciate a Optuna:
+
+| Iperparametro | Opzioni | Significato |
+|---|---|---|
+| `ggnn_aggr` | `add`, `mean`, `max` | Come si combinano i messaggi dei predecessori |
+| `ggnn_input` | `pad`, `linear` | Le 32 schede in ingresso completate con zeri, oppure trasformate da un layer appreso |
 
 ### Confronto
 
 | Modello | Come combina i predecessori | Parametri* |
 |---|---|---:|
-| GraphSAGE v1 | Media semplice | ≈ 246 000 |
 | GraphSAGE v2 | Media semplice + ultima attività | ≈ 273 000 |
-| GATv2 v2 | Media pesata appresa (attenzione) | ≈ 928 000 |
+| GATv2 v2 | Attenzione, 4 teste mediate | ≈ 928 000 |
+| GATv2 v3 | Attenzione, teste scelte da Optuna | ≈ 276 000 – 928 000 |
+| GGNN v3 | Somma / media / massimo + GRU | ≈ 339 000 – 344 000 |
 
 \* Esempio con 3 layer nascosti da 160 neuroni, sul dataset Receipt (32 valori in ingresso, 29 attività possibili).
 
+### Iperparametri cercati da Optuna
+
+Comuni a tutti i modelli: `learning_rate` (1e-5 – 1e-2), `batch_size` (128, 192, 256), `hidden_layers` (0 – 4), `layers_size` (64 – 256), `dropout` (0 – 0,4), `readout` (somma, media, massimo). Quelli specifici vengono aggiunti solo per il modello interessato, in `get_hyperparameters`:
+
+```python
+if GNN.__name__ == 'GATv2_GNN':
+    parameters['num_heads'] = trial.suggest_categorical('num_heads', [1, 2, 4])
+    parameters['concat'] = trial.suggest_categorical('concat', [True, False])
+if GNN.__name__ == 'GGNN_GNN':
+    parameters['ggnn_aggr'] = trial.suggest_categorical('ggnn_aggr', ['add', 'mean', 'max'])
+    parameters['ggnn_input'] = trial.suggest_categorical('ggnn_input', ['pad', 'linear'])
+```
+
 ---
 
-## 6. Risultati
+## 6. Provare il modello su un prefisso
+
+Lo script **`prova_predizione.py`** carica il modello migliore già addestrato, gli dà un prefisso e mostra le attività successive più probabili, accanto all'attività reale.
+
+```powershell
+python prova_predizione.py
+```
+
+Esempio con GraphSAGE v2 su Receipt (prefisso di 3 nodi della traccia `case-10810`):
+
+```
+Prefisso             : artificial_start -> Confirmationofreceipt -> T02Checkconfirmationofreceipt
+Attività reale       : T04Determineconfirmationofreceipt (insieme: train)
+Il modello propone   :
+   T04Determineconfirmationofreceipt              83.6 %
+   T06Determinenecessityofstopadvice              15.4 %
+   T03Adjustconfirmationofreceipt                  0.9 %
+```
+
+Il modello dà l'83,6 % all'attività corretta, ma lascia il 15,4 % a T06: ha imparato che dopo T02 esistono due percorsi possibili, e quale dei due è il più frequente.
+
+### Da dove vengono i prefissi
+
+```
+<Dataset>_processed.g            →   data_encoding.py   →   dataset/<Dataset>_tensors/*.pt
+tutti i grafi completi,              (fase prefix-IG)        un file per prefisso
+uno per traccia
+```
+
+- Il file **`.g`** contiene **tutte le tracce**, una dopo l'altra: per ogni traccia, le righe `v` (le attività, cioè i nodi) e le righe `e` (gli archi tra le attività). Ogni traccia è identificata dal suo `case_id`.
+- Ogni traccia viene tagliata in **prefissi** (le prime 2, 3, 4… attività), ognuno salvato in un file **`.pt`** con l'attività successiva come risposta da indovinare. Per Receipt: 1 434 tracce → 7 143 prefissi.
+- Il nome di un file dice tutto: `Receipt_case-10810_3.pt` = dataset Receipt, traccia `case-10810`, prefisso dei primi 3 nodi.
+- Ogni traccia inizia con `artificial_start` e finisce con `artificial_end`: sono marcatori di inizio e fine, non attività reali. `artificial_end` non è mai una risposta da indovinare.
+
+### Cosa fa lo script
+
+1. **Carica il prefisso** (`.pt`): le attività in forma numerica (`x`), gli archi (`edge_index`) e la risposta corretta.
+2. **Ricostruisce i nomi delle attività** a partire dalla codifica one-hot (`<Dataset>_ohe_activity.json`).
+3. **Carica il modello migliore**: costruisce un modello vuoto con gli stessi iperparametri, poi vi carica i pesi appresi (`load_state_dict`).
+4. **Calcola la predizione**: un punteggio per ogni attività possibile, trasformato in probabilità (`softmax`).
+5. **Mostra le 3 attività più probabili** accanto a quella reale.
+
+### Per provare altri casi
+
+In cima allo script:
+
+| Parametro | Esempio | Ruolo |
+|---|---|---|
+| `DATASET` | `'Receipt'` | Il dataset |
+| `PREFISSO` | `'case-10810_3'` | La traccia e la lunghezza del prefisso (un file di `dataset/<DATASET>_tensors`) |
+| `MODELLI` | `'models_sage_v2'` | La cartella dei risultati dell'addestramento |
+
+Per elencare i prefissi disponibili di una traccia:
+
+```powershell
+Get-ChildItem dataset\Receipt_tensors -Filter "Receipt_case-10810_*" -Name
+```
+
+Per GATv2, sostituire l'import in cima allo script con `from gnn_GATv2Conv_v2 import GATv2_GNN as SAGE_GNN` e usare `MODELLI = 'models_gat_v2'`.
+
+> Lo script indica l'insieme del prefisso (`train`, `validation` o `test`). Per una prova onesta, scegliere un prefisso del **test set**, che il modello non ha mai visto durante l'addestramento.
+
+---
+
+## 7. Risultati
 
 ### In sintesi
 
-- **GraphSAGE versione 2 è il modello migliore nel complesso**: migliora la loss di validazione su **tutti e 5 i dataset** rispetto alla versione 1, con il guadagno più netto sulle attività rare (F1 macro **+9,5 punti** su Receipt), ed è molto più veloce da addestrare (BPI12WC: da **7 h 20 a 1 h 02**).
-- **GATv2 non porta un guadagno chiaro** rispetto a GraphSAGE v2: leggermente migliore su BPI20P e BPI12WC, nettamente peggiore su Receipt, pari altrove, con un modello 3 volte più pesante.
-- **Le modifiche della versione 2 funzionano con entrambe le architetture**: anche GATv2 v2 ha una loss di validazione migliore di GraphSAGE v1 su tutti i dataset.
+- **I quattro modelli sono molto vicini tra loro**: a parità di scheletro (versione 2), la scelta dell'architettura cambia poco i risultati.
+- **GGNN v3 è il più regolare** (rango medio 2,0 su 4, mai ultimo) e ha la migliore accuracy su 3 dataset. **GraphSAGE v2** vince sui due dataset più piccoli ed è il più semplice.
+- **Sui dataset BPI gli scarti sono minimi** (≤ 0,004 di val loss): nessun vincitore netto.
+- **Helpdesk resta bloccato** a ≈ 30 % di F1 macro con tutti i modelli: è un limite dei dati (sbilanciamento delle classi), non dell'architettura.
 
-### Metriche complete
+### Metriche
 
-Modello migliore di ogni dataset (scelto sulla loss di validazione), valutato sul test set. In **grassetto** il valore migliore per ogni dataset.
+Modello migliore di ogni dataset (scelto sulla loss di validazione), valutato sul test set. In **grassetto** il migliore di ogni riga.
 
-| Dataset | Modello | Val loss ↓ | Accuracy | F1 macro | F1 weighted |
-|---|---|---:|---:|---:|---:|
-| Receipt | GraphSAGE v1 | 0,484 | 85,87 % | 43,25 % | 83,87 % |
-| | GraphSAGE v2 | **0,443** | **86,66 %** | **52,76 %** | **84,90 %** |
-| | GATv2 v2 | 0,458 | 85,79 % | 45,36 % | 83,81 % |
-| Helpdesk_no_resources | GraphSAGE v1 | 0,672 | 78,49 % | 29,69 % | 73,48 % |
-| | GraphSAGE v2 | **0,662** | **79,16 %** | **30,50 %** | **74,52 %** |
-| | GATv2 v2 | 0,669 | 78,09 % | 30,10 % | 73,49 % |
-| BPI20R | GraphSAGE v1 | 0,393 | **85,46 %** | 41,66 % | 80,62 % |
-| | GraphSAGE v2 | **0,389** | 85,43 % | 40,52 % | **80,76 %** |
-| | GATv2 v2 | 0,392 | 85,31 % | **42,54 %** | 80,68 % |
-| BPI20P | GraphSAGE v1 | 0,379 | 85,25 % | 44,36 % | 81,89 % |
-| | GraphSAGE v2 | 0,363 | **85,48 %** | 46,56 % | 81,97 % |
-| | GATv2 v2 | **0,361** | 85,42 % | **47,75 %** | **82,68 %** |
-| BPI12WC | GraphSAGE v1 | 0,491 | 77,31 % | 58,99 % | 73,31 % |
-| | GraphSAGE v2 | 0,483 | 78,06 % | 61,97 % | **75,83 %** |
-| | GATv2 v2 | **0,482** | **78,17 %** | **63,45 %** | 75,71 % |
+**Val loss** (più bassa = meglio)
 
-**Come leggere le metriche:**
+| Dataset | SAGE v2 | GATv2 v2 | GATv2 v3 | GGNN v3 |
+|---|---:|---:|---:|---:|
+| Receipt | **0,4433** | 0,4576 | 0,4539 | 0,4480 |
+| Helpdesk_no_resources | **0,6624** | 0,6686 | 0,6708 | 0,6628 |
+| BPI20R | 0,3894 | 0,3924 | 0,3908 | **0,3884** |
+| BPI20P | 0,3633 | **0,3614** | 0,3653 | 0,3624 |
+| BPI12WC | 0,4833 | **0,4823** | 0,4826 | 0,4828 |
 
-- **Val loss**: errore sul validation set, usato per scegliere il modello (più è bassa, meglio è). Si confronta solo tra modelli dello stesso dataset.
-- **Accuracy**: percentuale di predizioni corrette.
-- **F1 macro**: media dell'F1 di tutte le attività, ognuna con lo stesso peso: misura le prestazioni anche sulle **attività rare**.
-- **F1 weighted**: media dell'F1 pesata per la frequenza delle attività: riflette le prestazioni sulle attività più comuni.
+**Accuracy (%)**
 
-### Osservazioni
+| Dataset | SAGE v2 | GATv2 v2 | GATv2 v3 | GGNN v3 |
+|---|---:|---:|---:|---:|
+| Receipt | 86,66 | 85,79 | 86,24 | **86,70** |
+| Helpdesk_no_resources | **79,16** | 78,09 | 78,97 | 78,67 |
+| BPI20R | 85,43 | 85,31 | 85,45 | **85,51** |
+| BPI20P | 85,48 | 85,42 | 85,44 | **85,87** |
+| BPI12WC | 78,06 | 78,17 | **78,33** | 78,20 |
 
-**GraphSAGE v2 rispetto alla versione 1**
+**F1 macro (%)** — tutte le attività con lo stesso peso, comprese le rare
 
-- **Loss di validazione migliore su tutti i dataset**: il confronto è valido perché la funzione di perdita è la stessa.
-- **Il guadagno principale riguarda le attività rare** (F1 macro): +9,5 punti su Receipt, +3 su BPI12WC, +2,2 su BPI20P. È coerente con la modifica 2: conoscere l'ultima attività aiuta soprattutto a distinguere i casi poco frequenti.
-- **Addestramento molto più rapido**: i modelli convergono prima (normalizzazione, dati mescolati) e Optuna scarta prima le combinazioni peggiori.
-- **Il modello è meno sensibile agli iperparametri**: la prima combinazione provata da Optuna (identica per tutti i dataset) è la migliore su 3 dataset su 5.
+| Dataset | SAGE v2 | GATv2 v2 | GATv2 v3 | GGNN v3 |
+|---|---:|---:|---:|---:|
+| Receipt | **52,76** | 45,36 | 45,15 | 51,48 |
+| Helpdesk_no_resources | **30,50** | 30,10 | 30,36 | 30,16 |
+| BPI20R | 40,52 | 42,54 | 42,59 | **42,60** |
+| BPI20P | 46,56 | 47,75 | 47,35 | **48,14** |
+| BPI12WC | 61,97 | 63,45 | **64,05** | 63,31 |
 
-**GATv2 rispetto a GraphSAGE v2**
+**F1 weighted (%)** — attività pesate per frequenza
 
-- **Nessun guadagno chiaro**: GATv2 è leggermente migliore su BPI20P e BPI12WC (meno di 0,002 di val loss, entro il margine del caso), peggiore su Receipt (F1 macro −7,4 punti) e su Helpdesk.
-- **Ipotesi da verificare**: l'attenzione serve a scegliere tra più predecessori; potrebbe essere utile solo nei processi con molte attività parallele. Il modello, 3 volte più pesante, potrebbe anche adattarsi troppo ai dati sui dataset più piccoli.
+| Dataset | SAGE v2 | GATv2 v2 | GATv2 v3 | GGNN v3 |
+|---|---:|---:|---:|---:|
+| Receipt | 84,90 | 83,81 | 84,22 | **85,09** |
+| Helpdesk_no_resources | **74,52** | 73,49 | 74,25 | 73,91 |
+| BPI20R | 80,76 | 80,68 | 80,71 | **80,85** |
+| BPI20P | 81,97 | 82,68 | 82,63 | **83,03** |
+| BPI12WC | 75,83 | 75,71 | **76,35** | 75,91 |
 
-**Per tutti i modelli**
+### Interpretazione
 
-- **Sbilanciamento delle classi**: il divario tra F1 *weighted* e F1 *macro* resta ampio ovunque. Le attività frequenti sono predette bene, quelle rare molto meno.
-- **Helpdesk resta il punto debole** (F1 macro ≈ 30 % per i tre modelli): nessuna delle modifiche affronta lo sbilanciamento delle classi.
-- **BPI20R non cambia**: i tre modelli ottengono risultati quasi identici, il dataset sembra aver raggiunto un limite.
+- **GraphSAGE v2**: il modello più semplice, migliore su Receipt e Helpdesk, e il migliore in F1 macro su Receipt (52,8 %).
+- **GGNN v3**: la GRU dà il modello più costante, il migliore in accuracy su Receipt, BPI20R e BPI20P.
+- **GATv2**: l'attenzione non porta un guadagno chiaro. Su Receipt nessuna attività ha più di un predecessore, quindi l'attenzione non ha nulla da scegliere. Su BPI20P e BPI12WC, che hanno attività parallele, GATv2 v2 è primo in val loss.
+- **Teste di attenzione (v3 rispetto a v2)**: meglio su Receipt e BPI20R, peggio su Helpdesk e BPI20P, uguale su BPI12WC. Il numero di teste non è decisivo.
 
-> **Limiti del confronto**: ogni modello è stato addestrato una sola volta, con un solo seed; scarti inferiori a circa 1 punto possono essere dovuti al caso. La versione 2 combina tre modifiche (più `n_warmup_steps=10`): l'effetto di ciascuna non è isolato.
+### Iperparametri scelti da Optuna
 
-### Prossimi addestramenti
+Elenco completo per modello e dataset: `python migliori_iperparametri.py` (tabella anche in `migliori_iperparametri.csv`).
 
-| Addestramento | Stato |
-|---|---|
-| GraphSAGE versione 1 (codice originale) | ✅ completato |
-| GraphSAGE versione 2 (vedi sezione 2) | ✅ completato |
-| GATv2 con le modifiche della versione 2 | ✅ completato |
-| Ponderazione della loss per lo sbilanciamento delle classi | in programma |
-| Altre architetture GNN (GCN, GIN…) | in programma |
+**Scelte specifiche**
+
+| Dataset | GATv2 v3: teste / concat | GGNN v3: aggregazione / ingresso |
+|---|---|---|
+| Receipt | 1 / False | mean / pad |
+| Helpdesk_no_resources | 2 / True | add / linear |
+| BPI20R | 2 / True | max / pad |
+| BPI20P | 2 / False | mean / linear |
+| BPI12WC | 1 / False | mean / linear |
+
+**Tendenze comuni** (20 modelli migliori: 4 modelli × 5 dataset)
+
+| Iperparametro | Scelta prevalente | Cosa significa |
+|---|---|---|
+| `num_heads` (GATv2 v3) | 1 o 2, **mai 4** | La configurazione pesante della v2 non viene mai scelta: bastano poche teste |
+| `readout` | `max` (10/20) o `add` (7/20), `mean` solo 3/20 | Conta l'attività più marcata o il numero di attività, non la loro media; BPI20P e BPI20R preferiscono `add` |
+| `batch_size` | 256 (13/20) | I batch più grandi sono preferiti |
+| `learning_rate` | tra 1e-4 e 1e-3 (16/20) | Zona di apprendimento stabile |
+| `hidden_layers` | 0 o 1 nella metà dei casi | Reti poco profonde bastano: i prefissi sono corti |
+| `layers_size` | 160 – 224 (15/20) | Dimensione media dello spazio esplorato |
+
+**Cosa significa**: le stesse combinazioni ritornano spesso tra modelli diversi. Con `seed=0`, i primi trial di Optuna sono estratti a caso ma sempre allo stesso modo: il trial 0 (`lr 4,4e-4`, batch 256, 3 layer da 160, dropout 0,17, `max`) è il migliore 6 volte. Con 20 trial la ricerca esplora solo una parte dello spazio, e gli scarti tra combinazioni sono piccoli: non esiste un ottimo netto, ma una **zona di buoni iperparametri**. I modelli sono poco sensibili alla scelta precisa al suo interno.
+
+> **Limiti del confronto**: ogni modello è stato addestrato una sola volta, con un solo seed; scarti inferiori a circa 1 punto (o 0,005 di val loss) possono essere dovuti al caso. GATv2 v3 e GGNN v3 hanno 2 iperparametri in più degli altri modelli.
 
 ---
 
