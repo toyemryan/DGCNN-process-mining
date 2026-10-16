@@ -331,6 +331,10 @@ Modello migliore di ogni dataset (scelto sulla loss di validazione), valutato su
 - **GATv2**: l'attenzione non porta un guadagno chiaro. Su Receipt nessuna attività ha più di un predecessore, quindi l'attenzione non ha nulla da scegliere. Su BPI20P e BPI12WC, che hanno attività parallele, GATv2 v2 è primo in val loss.
 - **Teste di attenzione (v3 rispetto a v2)**: meglio su Receipt e BPI20R, peggio su Helpdesk e BPI20P, uguale su BPI12WC. Il numero di teste non è decisivo.
 
+### Limite dei dati
+
+Una semplice tabella di frequenze, senza rete neurale (si predice l'attività che segue più spesso la stessa sequenza nel training set), raggiunge già l'**83,4 %** su Receipt, contro l'86,7 % del miglior GNN: i modelli sono vicini al **limite imposto dai dati**, ed è per questo che nessuna architettura si distingue.
+
 ### Iperparametri scelti da Optuna
 
 Elenco completo per modello e dataset: `python migliori_iperparametri.py` (tabella anche in `migliori_iperparametri.csv`).
