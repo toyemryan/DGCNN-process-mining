@@ -119,6 +119,7 @@ Event log  →  Instance Graphs  →  Prefix-IGs  →  GNN  →  Prossima attivi
 | `gnn_GATv2Conv_v2.py` | Architettura GATv2 con le modifiche della versione 2 |
 | `gnn_GATv2Conv_v3.py` | GATv2 v3: teste di attenzione scelte da Optuna |
 | `gnn_GatedGraph_v3.py` | GGNN v3: GRU, aggregazione e ingresso scelti da Optuna |
+| `gnn_GCNConv.py` | GCN (scheletro originale) |
 | `hyper_parameters_search.py` | Ricerca degli iperparametri, addestramento e test |
 | `prova_predizione.py` | Prova del modello addestrato su un prefisso (sezione 6) |
 | `migliori_iperparametri.py` | Metriche e iperparametri scelti da Optuna per ogni modello (sezione 7) |
@@ -127,7 +128,7 @@ Event log  →  Instance Graphs  →  Prefix-IGs  →  GNN  →  Prossima attivi
 
 ## 5. Architetture utilizzate
 
-Tutti i modelli condividono lo **stesso scheletro**: cambia solo il tipo di layer che fa circolare l'informazione tra le attività. In questo modo il confronto tra architetture è equo.
+Tutti i modelli sono addestrati con lo **stesso protocollo** (stessi dati, dati mescolati, stessa ricerca Optuna). GraphSAGE v2, GATv2 e GGNN condividono anche lo **stesso scheletro** (versione 2): tra loro cambia solo il tipo di layer. GCN usa invece lo scheletro originale.
 
 ### Cosa succede quando si dà un prefisso al modello
 
@@ -181,6 +182,12 @@ Un solo layer `GatedGraphConv` con `hidden_layers + 2` passi (stesso numero degl
 | `ggnn_aggr` | `add`, `mean`, `max` | Come si combinano i messaggi dei predecessori |
 | `ggnn_input` | `pad`, `linear` | Le 32 schede in ingresso completate con zeri, oppure trasformate da un layer appreso |
 
+### GCN (`gnn_GCNConv.py`)
+
+Ogni attività fa una **media pesata** della propria scheda e di quelle dei predecessori, con **una sola matrice di pesi** per tutti: non distingue «chi sono» da «cosa è successo prima di me». La normalizzazione dipende dal numero di collegamenti di ogni attività ed è pensata per grafi **non orientati**. Usa lo scheletro originale (senza ultima attività, LayerNorm e residuo).
+
+Optuna sceglie anche `improved` (l'attività conta il doppio di sé stessa), ma in PyG 2.8 questo parametro **non ha effetto** se non si passa `edge_weight`: le uscite sono identiche con `True` e `False`.
+
 ### Confronto
 
 | Modello | Come combina i predecessori | Parametri* |
@@ -189,6 +196,7 @@ Un solo layer `GatedGraphConv` con `hidden_layers + 2` passi (stesso numero degl
 | GATv2 v2 | Attenzione, 4 teste mediate | ≈ 928 000 |
 | GATv2 v3 | Attenzione, teste scelte da Optuna | ≈ 276 000 – 928 000 |
 | GGNN v3 | Somma / media / massimo + GRU | ≈ 339 000 – 344 000 |
+| GCN | Media pesata, una sola matrice (scheletro originale) | ≈ 139 000 |
 
 \* Esempio con 3 layer nascosti da 160 neuroni, sul dataset Receipt (32 valori in ingresso, 29 attività possibili).
 
@@ -203,6 +211,8 @@ if GNN.__name__ == 'GATv2_GNN':
 if GNN.__name__ == 'GGNN_GNN':
     parameters['ggnn_aggr'] = trial.suggest_categorical('ggnn_aggr', ['add', 'mean', 'max'])
     parameters['ggnn_input'] = trial.suggest_categorical('ggnn_input', ['pad', 'linear'])
+if GNN.__name__ == 'GCN_GNN':
+    parameters['improved'] = trial.suggest_categorical('improved', [True, False])
 ```
 
 ---
@@ -275,7 +285,8 @@ Per GATv2, sostituire l'import in cima allo script con `from gnn_GATv2Conv_v2 im
 
 ### In sintesi
 
-- **I quattro modelli sono molto vicini tra loro**: a parità di scheletro (versione 2), la scelta dell'architettura cambia poco i risultati.
+- **I quattro modelli con lo scheletro versione 2 sono molto vicini tra loro**: la scelta dell'architettura cambia poco i risultati.
+- **GCN è ultimo in val loss su tutti i dataset**, con gli scarti maggiori su Receipt e BPI20P.
 - **GGNN v3 è il più regolare** (rango medio 2,0 su 4, mai ultimo) e ha la migliore accuracy su 3 dataset. **GraphSAGE v2** vince sui due dataset più piccoli ed è il più semplice.
 - **Sui dataset BPI gli scarti sono minimi** (≤ 0,004 di val loss): nessun vincitore netto.
 - **Helpdesk resta bloccato** a ≈ 30 % di F1 macro con tutti i modelli: è un limite dei dati (sbilanciamento delle classi), non dell'architettura.
@@ -286,49 +297,50 @@ Modello migliore di ogni dataset (scelto sulla loss di validazione), valutato su
 
 **Val loss** (più bassa = meglio)
 
-| Dataset | SAGE v2 | GATv2 v2 | GATv2 v3 | GGNN v3 |
-|---|---:|---:|---:|---:|
-| Receipt | **0,4433** | 0,4576 | 0,4539 | 0,4480 |
-| Helpdesk_no_resources | **0,6624** | 0,6686 | 0,6708 | 0,6628 |
-| BPI20R | 0,3894 | 0,3924 | 0,3908 | **0,3884** |
-| BPI20P | 0,3633 | **0,3614** | 0,3653 | 0,3624 |
-| BPI12WC | 0,4833 | **0,4823** | 0,4826 | 0,4828 |
+| Dataset | SAGE v2 | GATv2 v2 | GATv2 v3 | GGNN v3 | GCN |
+|---|---:|---:|---:|---:|---:|
+| Receipt | **0,4433** | 0,4576 | 0,4539 | 0,4480 | 0,5509 |
+| Helpdesk_no_resources | **0,6624** | 0,6686 | 0,6708 | 0,6628 | 0,6803 |
+| BPI20R | 0,3894 | 0,3924 | 0,3908 | **0,3884** | 0,4030 |
+| BPI20P | 0,3633 | **0,3614** | 0,3653 | 0,3624 | 0,4151 |
+| BPI12WC | 0,4833 | **0,4823** | 0,4826 | 0,4828 | 0,4943 |
 
 **Accuracy (%)**
 
-| Dataset | SAGE v2 | GATv2 v2 | GATv2 v3 | GGNN v3 |
-|---|---:|---:|---:|---:|
-| Receipt | 86,66 | 85,79 | 86,24 | **86,70** |
-| Helpdesk_no_resources | **79,16** | 78,09 | 78,97 | 78,67 |
-| BPI20R | 85,43 | 85,31 | 85,45 | **85,51** |
-| BPI20P | 85,48 | 85,42 | 85,44 | **85,87** |
-| BPI12WC | 78,06 | 78,17 | **78,33** | 78,20 |
+| Dataset | SAGE v2 | GATv2 v2 | GATv2 v3 | GGNN v3 | GCN |
+|---|---:|---:|---:|---:|---:|
+| Receipt | 86,66 | 85,79 | 86,24 | **86,70** | 84,33 |
+| Helpdesk_no_resources | **79,16** | 78,09 | 78,97 | 78,67 | 78,09 |
+| BPI20R | 85,43 | 85,31 | 85,45 | **85,51** | 85,09 |
+| BPI20P | 85,48 | 85,42 | 85,44 | **85,87** | 83,92 |
+| BPI12WC | 78,06 | 78,17 | **78,33** | 78,20 | 77,51 |
 
 **F1 macro (%)** — tutte le attività con lo stesso peso, comprese le rare
 
-| Dataset | SAGE v2 | GATv2 v2 | GATv2 v3 | GGNN v3 |
-|---|---:|---:|---:|---:|
-| Receipt | **52,76** | 45,36 | 45,15 | 51,48 |
-| Helpdesk_no_resources | **30,50** | 30,10 | 30,36 | 30,16 |
-| BPI20R | 40,52 | 42,54 | 42,59 | **42,60** |
-| BPI20P | 46,56 | 47,75 | 47,35 | **48,14** |
-| BPI12WC | 61,97 | 63,45 | **64,05** | 63,31 |
+| Dataset | SAGE v2 | GATv2 v2 | GATv2 v3 | GGNN v3 | GCN |
+|---|---:|---:|---:|---:|---:|
+| Receipt | **52,76** | 45,36 | 45,15 | 51,48 | 41,99 |
+| Helpdesk_no_resources | **30,50** | 30,10 | 30,36 | 30,16 | 29,56 |
+| BPI20R | 40,52 | 42,54 | 42,59 | **42,60** | 42,05 |
+| BPI20P | 46,56 | 47,75 | 47,35 | **48,14** | 45,57 |
+| BPI12WC | 61,97 | 63,45 | **64,05** | 63,31 | 60,35 |
 
 **F1 weighted (%)** — attività pesate per frequenza
 
-| Dataset | SAGE v2 | GATv2 v2 | GATv2 v3 | GGNN v3 |
-|---|---:|---:|---:|---:|
-| Receipt | 84,90 | 83,81 | 84,22 | **85,09** |
-| Helpdesk_no_resources | **74,52** | 73,49 | 74,25 | 73,91 |
-| BPI20R | 80,76 | 80,68 | 80,71 | **80,85** |
-| BPI20P | 81,97 | 82,68 | 82,63 | **83,03** |
-| BPI12WC | 75,83 | 75,71 | **76,35** | 75,91 |
+| Dataset | SAGE v2 | GATv2 v2 | GATv2 v3 | GGNN v3 | GCN |
+|---|---:|---:|---:|---:|---:|
+| Receipt | 84,90 | 83,81 | 84,22 | **85,09** | 82,25 |
+| Helpdesk_no_resources | **74,52** | 73,49 | 74,25 | 73,91 | 73,11 |
+| BPI20R | 80,76 | 80,68 | 80,71 | **80,85** | 80,43 |
+| BPI20P | 81,97 | 82,68 | 82,63 | **83,03** | 80,84 |
+| BPI12WC | 75,83 | 75,71 | **76,35** | 75,91 | 74,23 |
 
 ### Interpretazione
 
 - **GraphSAGE v2**: il modello più semplice, migliore su Receipt e Helpdesk, e il migliore in F1 macro su Receipt (52,8 %).
 - **GGNN v3**: la GRU dà il modello più costante, il migliore in accuracy su Receipt, BPI20R e BPI20P.
 - **GATv2**: l'attenzione non porta un guadagno chiaro. Su Receipt nessuna attività ha più di un predecessore, quindi l'attenzione non ha nulla da scegliere. Su BPI20P e BPI12WC, che hanno attività parallele, GATv2 v2 è primo in val loss.
+- **GCN**: ultimo su tutti i dataset in val loss, con gli scarti maggiori su Receipt (+0,108) e BPI20P (+0,054), dove gli altri modelli sfruttano meglio i dati; su Helpdesk lo scarto è piccolo, perché tutti i modelli sono già al limite dei dati. Poiché cambia anche lo scheletro, lo scarto non si può attribuire al solo layer `GCNConv`.
 - **Teste di attenzione (v3 rispetto a v2)**: meglio su Receipt e BPI20R, peggio su Helpdesk e BPI20P, uguale su BPI12WC. Il numero di teste non è decisivo.
 
 ### Limite dei dati
@@ -382,9 +394,11 @@ Elenco completo per modello e dataset: `python migliori_iperparametri.py` (tabel
 | `hidden_layers` | 0 o 1 nella metà dei casi | Reti poco profonde bastano: i prefissi sono corti |
 | `layers_size` | 160 – 224 (15/20) | Dimensione media dello spazio esplorato |
 
+**GCN**: `readout = max` su tutti e 5 i dataset, dropout molto basso (≤ 0,08), 0 layer nascosti su Receipt e BPI12WC e 3 su BPI20R e BPI20P. Le scelte di `improved` (3 `False`, 2 `True`) sono casuali, perché il parametro non ha effetto.
+
 **Cosa significa**: le stesse combinazioni ritornano spesso tra modelli diversi. Con `seed=0`, i primi trial di Optuna sono estratti a caso ma sempre allo stesso modo: il trial 0 (`lr 4,4e-4`, batch 256, 3 layer da 160, dropout 0,17, `max`) è il migliore 6 volte. Con 20 trial la ricerca esplora solo una parte dello spazio, e gli scarti tra combinazioni sono piccoli: non esiste un ottimo netto, ma una **zona di buoni iperparametri**. I modelli sono poco sensibili alla scelta precisa al suo interno.
 
-> **Limiti del confronto**: ogni modello è stato addestrato una sola volta, con un solo seed; scarti inferiori a circa 1 punto (o 0,005 di val loss) possono essere dovuti al caso. GATv2 v3 e GGNN v3 hanno 2 iperparametri in più degli altri modelli.
+> **Limiti del confronto**: ogni modello è stato addestrato una sola volta, con un solo seed; scarti inferiori a circa 1 punto (o 0,005 di val loss) possono essere dovuti al caso. GATv2 v3 e GGNN v3 hanno 2 iperparametri in più degli altri modelli. GCN usa lo scheletro originale: lo confrontiamo come modello completo, non come singolo layer.
 
 ---
 
