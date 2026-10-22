@@ -1,6 +1,8 @@
 # Notes personnelles
 README_DETAILLE.md
 mon_test.py
+gnn_GATv2Conv_v2.py
+gnn.py
 
 # Environnement Python
 .venv/
