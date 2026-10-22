@@ -53,12 +53,19 @@ def get_hyperparameters(trial):
         'layers_size': trial.suggest_int('layers_size', 64, 256, step=32),
         'dropout': trial.suggest_float('dropout', 0.0, 0.4),
         'readout': trial.suggest_categorical('readout', ['add', 'mean', 'max']),
-        'aggregator': trial.suggest_categorical('aggregator', ['mean']),
     }
     # iperparametri specifici di GATv2: solo quando si addestra GATv2
     if GNN.__name__ == 'GATv2_GNN':
         parameters['num_heads'] = trial.suggest_categorical('num_heads', [1, 2, 4])
         parameters['concat'] = trial.suggest_categorical('concat', [True, False])
+
+    # iperparametri specifici di GCN: solo quando si addestra GCN
+    if GNN.__name__ == 'GCN_GNN':
+        parameters['improved'] = trial.suggest_categorical('improved', [True, False])
+
+    # iperparametri specifici di SAGE: solo quando si addestra SAGE
+    if GNN.__name__ == 'SAGE_GNN':
+        parameters['aggregator'] = trial.suggest_categorical('aggregator', ['mean'])
 
     # iperparametri specifici di GGNN: solo quando si addestra GGNN
     if GNN.__name__ == 'GGNN_GNN':
