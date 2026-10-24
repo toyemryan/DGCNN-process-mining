@@ -12,7 +12,7 @@ import pandas as pd
 import torch
 
 # Cartelle dei risultati da confrontare (quelle che non esistono vengono saltate)
-ESPERIMENTI = ['models_sage_v2', 'models_gat_v2', 'models_gat_v3', 'models_ggnn_v3']
+ESPERIMENTI = ['models_sage', 'models_gatv2', 'models_ggnn', 'models_gcn']
 DATASET = ['Receipt', 'Helpdesk_no_resources', 'BPI20R', 'BPI20P', 'BPI12WC']
 
 righe = []

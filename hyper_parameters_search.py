@@ -13,7 +13,8 @@ from data_encoding import main as data_encoding
 #from gnn_v2 import SAGE_GNN as GNN
 #from gnn_GATv2Conv_v2 import GATv2_GNN as GNN
 #from gnn_GATv2Conv_v3 import GATv2_GNN as GNN
-from gnn_GatedGraph_v3 import GGNN_GNN as GNN
+#from gnn_GatedGraph_v3 import GGNN_GNN as GNN
+from gnn_GCN import GCN_GNN as GNN
 from config import EPOCHS, N_TRIALS, LOG_NAME, EARLY_STOPPING
 from sklearn.metrics import classification_report
 
