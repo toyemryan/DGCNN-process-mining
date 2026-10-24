@@ -20,9 +20,9 @@ dataset/*_processed.g
 dataset/*_tensors/
 
 # Resultats d'entrainement
-models/
-models_*/
-various/
+# models/
+# models_*/
+# various/
 
 # Journaux
 log.txt

@@ -1,0 +1,2 @@
+test_loss,test_accuracy,test_macro avg_precision,test_macro avg_recall,test_macro avg_f1-score,test_weighted avg_precision,test_weighted avg_recall,test_weighted avg_f1-score,combination,val,epoch,trial
+0.39722534,85.43,50.79,43.46,42.53,82.0,85.43,80.84,comb_lr_0.0002008755716015459_bs_192_hl_2_ls_128_d_0.32250667110396125_r_add_a_mean_ga_mean_gi_pad,0.39212523329825627,41,18
